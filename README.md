@@ -94,16 +94,18 @@ All packages can be installed directly within Stata using the `ssc install` comm
 
 ### Python Libraries
 
-Required Python packages for the entropy-weighted index construction:
+Required Python packages for EW-ESGUI index construction, missing value forecasting, econometric visualization, and text mining:
 
 ```
 pandas>=1.3.0
 numpy>=1.21.0
 scipy>=1.7.0
 scikit-learn>=1.0.0
-matplotlib>=3.4.0
+statsmodels>=0.13.0  # For Holt's linear trend missing value imputation (HOLT_TREND.ipynb)
+openpyxl>=3.0.0      # For reading/writing Excel workbooks
+matplotlib>=3.4.0    # For visualization (Research Objective 2.ipynb)
 seaborn>=0.11.0
-pdfplumber>=0.7.0  # For PDF text extraction (if needed)
+pdfplumber>=0.7.0    # For PDF text extraction (if needed)
 ```
 
 **Installation:** See Section 5 for installation procedures.
@@ -126,12 +128,14 @@ Following Energy Economics journal policy, all analysis is performed through **s
 ```
 Project Root: e:/DOFILE & CODE-20260421T083641Z-3-001/
 │
-├── README.md                          # This file
+├── README.md                          # Replication documentation and user guide
 │
 ├── DOFILE & CODE/                     # Analysis scripts and programs
-│   ├── ENTROPY.ipynb                 # Python notebook for EW-ESGUI construction
-│   ├── FEVD_vn.do                    # Stata script for VAR/FEVD analysis
-│   └── Panel Quantile Analysis.do    # Stata script for MMQR & causality analysis
+│   ├── ENTROPY.ipynb                 # Python notebook for EW-ESGUI construction (Research Objective 1)
+│   ├── HOLT_TREND.ipynb              # Python notebook for missing value imputation via Holt's Linear Trend (RO2 Preprocessing)
+│   ├── Panel Quantile Analysis.do    # Stata script for MMQR & panel causality analysis (Research Objective 2)
+│   ├── FEVD_vn.do                    # Stata script for VAR/FEVD dynamic analysis (Research Objective 1 Validation)
+│   └── Research Objective 2.ipynb    # Python notebook for visualizing MMQR & Bootstrap quantile estimates
 │
 └── DATA-20260421T084140Z-3-001/
     └── DATA/                          # Raw and processed data files
@@ -147,35 +151,51 @@ Project Root: e:/DOFILE & CODE-20260421T083641Z-3-001/
 #### Analysis Programs
 
 1. **ENTROPY.ipynb**
-   - **Purpose:** Constructs the Entropy-Weighted ESG-based Sustainability Uncertainty Index (EW-ESGUI)
-   - **Language:** Python
-   - **Key Functions:** Text mining, entropy weighting, index normalization
-   - **Outputs:** EW-ESGUI time series data by country
+   - **Purpose:** Constructs the Entropy-Weighted ESG-based Sustainability Uncertainty Index (EW-ESGUI) for Research Objective 1
+   - **Language:** Python 3.9+ (Jupyter Notebook)
+   - **Key Functions:** Multi-source text mining, term-frequency normalization, information entropy weighting across E, S, G pillars, and composite index normalization
+   - **Outputs:** Country-specific annual EW-ESGUI time series
    - **Execution Time:** ~10-15 minutes
 
-2. **FEVD_vn.do**
-   - **Purpose:** Performs Vector Autoregression (VAR) analysis with Impulse Response Functions and Forecast Error Variance Decomposition
-   - **Language:** Stata 17+
-   - **Analysis Modules:**
-     - Environmental: VAR(EW_ESGUI, AFF, CO2E) with 8-period horizon, 90% CI
-     - Social: VAR(EW_ESGUI, UT, PG) with 8-period horizon, 90% CI
-     - Government: VAR(EW_ESGUI, GDP, INF) with 8-period horizon, 90% CI
-     - Comparison with Standard ESGUI
-   - **Outputs:** FEVD tables, IRF graphs, impulse response estimates
-   - **Execution Time:** ~5-10 minutes
+2. **HOLT_TREND.ipynb**
+   - **Purpose:** Preprocesses the panel dataset by handling missing values via Holt's Linear Trend forecasting method prior to Research Objective 2 (RO2) econometric estimation
+   - **Language:** Python 3.9+ (Google Colab / Jupyter Notebook)
+   - **Key Method:** Holt's Linear Exponential Smoothing (`statsmodels.tsa.holtwinters.ExponentialSmoothing` with additive trend: `trend="add"`, `seasonal=None`, `initialization_method="estimated"`)
+   - **Role in Workflow:** Pre-imputes missing observations for recent years (2022, 2023, 2024, 2025) across country panel series to prevent sample truncation and information loss when Stata applies listwise deletion (`drop if missings > 0`)
+   - **Optimization:** Optimizes level parameter ($\alpha$) and trend parameter ($\beta$) sequentially per country-series; logs fitted parameters into `holt_params_df` for empirical transparency
+   - **Outputs:** Complete, imputed panel dataset (`HOLT TREND 9.4.xlsx` / integrated into `DATASET.xlsx`)
+   - **Execution Time:** ~1-3 minutes
 
 3. **Panel Quantile Analysis.do**
-   - **Purpose:** Panel quantile regression analysis with robustness checks and causality tests
+   - **Purpose:** Conducts panel econometric estimation for Research Objective 2 (Heterogeneous effects of EW-ESGUI on renewable energy consumption)
    - **Language:** Stata 17+
    - **Analysis Modules:**
-     - Data setup: Missing value handling, panel encoding
-     - Descriptive statistics: Summary statistics by country and overall
-     - Preliminary tests: Normality, cross-sectional dependence, slope homogeneity, unit roots, cointegration
-     - Main analysis: MMQR at quantiles (0.25, 0.50, 0.75, 0.90)
-     - Robustness: Bootstrap quantile regression at quantiles (0.10, 0.25, 0.50, 0.75, 0.90)
-     - Causality: Dumitrescu-Hurlin Granger causality tests
-   - **Outputs:** Regression tables, diagnostic test results, causality matrices
+     - Data setup: Panel indexing (`encode`, `xtset`) and remaining missing value verification
+     - Descriptive statistics: Summary statistics overall and by country unit
+     - Preliminary tests: Normality (`sktest`), Pesaran CD cross-sectional dependence (`xtcdf`), slope homogeneity (`xthst`), CIPS panel unit root (`xtcips`), and Westerlund cointegration (`xtwest`)
+     - Main analysis: Method of Moments Quantile Regression (`mmqreg`) across quantiles ($q = 0.25, 0.50, 0.75, 0.90$)
+     - Robustness checks: Bootstrapped quantile regression (`bsqreg`) with 500 replications across quantiles ($q = 0.10, 0.25, 0.50, 0.75, 0.90$)
+     - Causality: Dumitrescu-Hurlin panel Granger causality testing (`xtgcause`)
+   - **Outputs:** Regression estimation logs, diagnostic test tables, empirical coefficient files
    - **Execution Time:** ~15-25 minutes
+
+4. **FEVD_vn.do**
+   - **Purpose:** Vector Autoregression (VAR), Impulse Response Functions (IRF), and Forecast Error Variance Decomposition (FEVD) for dynamic validation of EW-ESGUI vs. standard ESGUI
+   - **Language:** Stata 17+
+   - **Analysis Modules:**
+     - Environmental dimension: VAR(EW_ESGUI_diff, AFF_diff, CO2E_diff) with 8-period horizon, 90% Cholesky CI
+     - Social dimension: VAR(EW_ESGUI_diff, UT_diff, PG) with 8-period horizon, 90% Cholesky CI
+     - Governance dimension: VAR(EW_ESGUI_diff, GDP, INF_diff) with 8-period horizon, 90% Cholesky CI
+     - Benchmark comparison: Parallel VAR/IRF/FEVD using standard equal-weighted ESGUI
+   - **Outputs:** FEVD tables (Tables 5-6), orthogonalized IRF graphs (Figures 7-8)
+   - **Execution Time:** ~5-10 minutes
+
+5. **Research Objective 2.ipynb**
+   - **Purpose:** Post-estimation visualization of MMQR and Bootstrapped quantile regression results
+   - **Language:** Python 3.9+ (Jupyter Notebook)
+   - **Key Functions:** Imports Stata estimation outputs (`MMQR_Results_Coefficients.xlsx`, `MMQR_Results_Significance.xlsx`, `boostrap2.xlsx`), plots trajectory curves across quantiles, and color-codes statistical significance (***, **, *)
+   - **Outputs:** Publication-grade comparative figures (Figure 9 for MMQR and Figure 10 for Bootstrap QR)
+   - **Execution Time:** ~1-2 minutes
 
 #### Data Files
 
@@ -191,7 +211,7 @@ Project Root: e:/DOFILE & CODE-20260421T083641Z-3-001/
      - Financial Variables: FDI (Foreign Direct Investment), LPR (Labor Participation Rate)
    - **Sample:** 6 Asian countries across multiple years
    - **Format:** Machine-readable Excel format
-   - **Missing Data:** Already cleaned; any remaining missing values are noted in analysis scripts
+   - **Missing Data:** Preprocessed and imputed for target missing periods (2022–2025) using Holt's Linear Trend forecasting (`HOLT_TREND.ipynb`); remaining missing values are verified in Stata scripts
 
 2. **MMQR_Results_Coefficients.xlsx**
    - **Contents:** Estimated coefficients from Method of Moments Quantile Regression models
@@ -268,9 +288,13 @@ Project Root: e:/DOFILE & CODE-20260421T083641Z-3-001/
 
 ### Data Quality Assurance
 
-- **Completeness:** Missing values are handled in the analysis scripts (dropped completely from analysis with notification)
-- **Consistency:** All variables are checked for consistency across countries and time periods
-- **Validation:** Descriptive statistics and diagnostic tests are performed in the Stata analysis script (Panel Quantile Analysis.do)
+- **Completeness & Missing Data Protocol:**
+  - Macroeconomic, energy, and environmental indicators often suffer from publication lag in recent periods (2022–2025).
+  - To prevent drastic sample truncation and maintain a balanced panel, a **two-tier data handling strategy** is implemented:
+    1. **Holt's Linear Trend Imputation (`HOLT_TREND.ipynb`):** Missing values in forecast years (2022–2025) are imputed recursively using country-specific Holt's two-parameter linear exponential smoothing (`statsmodels.tsa.holtwinters.ExponentialSmoothing`). Smoothing parameters ($\alpha, \beta$) are empirically estimated and logged per country and variable, preserving temporal trajectory without introducing artificial mean distortions.
+    2. **Stata Screening (`Panel Quantile Analysis.do`):** Remaining observations with missing values across required regressors (`rowmiss(*) > 0`) are identified and omitted (`drop if missings > 0`) prior to running quantile estimations.
+- **Consistency:** All variables are checked for unit consistency, date alignments, and cross-country comparability.
+- **Validation:** Descriptive statistics, distribution normality, and panel diagnostics are systematically performed in Stata (`Panel Quantile Analysis.do`).
 
 ---
 
@@ -338,12 +362,12 @@ which xtgcause
 Navigate to the project root directory and execute:
 
 ```bash
-pip install pandas numpy scipy scikit-learn matplotlib seaborn pdfplumber openpyxl
+pip install pandas numpy scipy scikit-learn statsmodels openpyxl matplotlib seaborn pdfplumber
 ```
 
 **Verification:**
 ```bash
-python -c "import pandas; import numpy; print('Libraries installed successfully')"
+python -c "import pandas, numpy, statsmodels, openpyxl; print('All Python libraries installed successfully')"
 ```
 
 ### Step 5: Verify Project Structure
@@ -372,16 +396,22 @@ For users who want to run the entire analysis pipeline automatically from raw da
 @echo off
 cd /d "e:\DOFILE & CODE-20260421T083641Z-3-001"
 
-echo Running Entropy-Weighted ESGUI construction...
+echo Step 1: Constructing Entropy-Weighted ESGUI Index (Research Objective 1)...
 "e:/DOFILE & CODE-20260421T083641Z-3-001/.venv/Scripts/python.exe" "DOFILE & CODE/ENTROPY.ipynb"
 
-echo Running complete analysis pipeline...
+echo Step 2: Imputing missing panel values via Holt's Linear Trend (RO2 Preprocessing)...
+"e:/DOFILE & CODE-20260421T083641Z-3-001/.venv/Scripts/python.exe" "DOFILE & CODE/HOLT_TREND.ipynb"
+
+echo Step 3: Running panel quantile regressions, diagnostics, and causality (RO2)...
 stata /b do "DOFILE & CODE/Panel Quantile Analysis.do"
 
-echo Running VAR/FEVD dynamic analysis...
+echo Step 4: Running dynamic VAR/IRF/FEVD validation analysis...
 stata /b do "DOFILE & CODE/FEVD_vn.do"
 
-echo Analysis complete. Results saved.
+echo Step 5: Generating MMQR and Bootstrap quantile regression figures...
+"e:/DOFILE & CODE-20260421T083641Z-3-001/.venv/Scripts/python.exe" "DOFILE & CODE/Research Objective 2.ipynb"
+
+echo Analysis complete. All tables and figures saved.
 pause
 ```
 
@@ -391,16 +421,22 @@ pause
 #!/bin/bash
 cd "e:/DOFILE & CODE-20260421T083641Z-3-001"
 
-echo "Running Entropy-Weighted ESGUI construction..."
+echo "Step 1: Constructing Entropy-Weighted ESGUI Index (RO1)..."
 jupyter nbconvert --to notebook --execute "DOFILE & CODE/ENTROPY.ipynb"
 
-echo "Running complete analysis pipeline..."
+echo "Step 2: Imputing missing values via Holt's Linear Trend (RO2 Preprocessing)..."
+jupyter nbconvert --to notebook --execute "DOFILE & CODE/HOLT_TREND.ipynb"
+
+echo "Step 3: Running panel quantile regressions, diagnostics, and causality (RO2)..."
 stata -b do "DOFILE & CODE/Panel Quantile Analysis.do"
 
-echo "Running VAR/FEVD dynamic analysis..."
+echo "Step 4: Running dynamic VAR/IRF/FEVD validation analysis..."
 stata -b do "DOFILE & CODE/FEVD_vn.do"
 
-echo "Analysis complete. Results saved."
+echo "Step 5: Generating RO2 visualization figures..."
+jupyter nbconvert --to notebook --execute "DOFILE & CODE/Research Objective 2.ipynb"
+
+echo "Analysis complete. All tables and figures saved."
 ```
 
 #### **Using Stata do-file Master Script (Alternative):**
@@ -420,17 +456,21 @@ set more off
 cd "e:\DOFILE & CODE-20260421T083641Z-3-001"
 
 * Step 1: Generate Entropy-Weighted ESGUI Index (Python)
-* Note: First run ENTROPY.ipynb in Jupyter to generate EW_ESGUI data
-display "Step 1: Entropy-weighted index must be pre-generated using ENTROPY.ipynb"
-display "Status: Awaiting Python output..."
+display "Step 1: Run ENTROPY.ipynb to generate EW_ESGUI time series"
 
-* Step 2: Load and prepare data
+* Step 2: Impute missing panel values via Holt's Linear Trend (Python)
+display "Step 2: Run HOLT_TREND.ipynb to resolve missing values for RO2 dataset"
+
+* Step 3: Load prepared dataset and run panel quantile analysis (Stata)
 use "DATA-20260421T084140Z-3-001\DATA\DATASET.xlsx", clear
 do "DOFILE & CODE\Panel Quantile Analysis.do"
 
-* Step 3: Generate FEVD and IRF analysis
+* Step 4: Generate FEVD and IRF dynamic analysis (Stata)
 use "DATA-20260421T084140Z-3-001\DATA\DATASET.xlsx", clear
 do "DOFILE & CODE\FEVD_vn.do"
+
+* Step 5: Visualize quantile results (Python)
+display "Step 5: Run Research Objective 2.ipynb to plot Figures 9 and 10"
 
 * Completion message
 display "=========================================="
@@ -466,28 +506,95 @@ jupyter notebook "DOFILE & CODE/ENTROPY.ipynb"
 
 **What This Script Does:**
 - Loads raw ESG-related text data from multiple sources
-- Performs text mining to extract ESG-related keywords
-- Normalizes text frequency distributions
-- Calculates entropy-based weights for E, S, and G pillars by country
-- Constructs the EW-ESGUI index
-- Generates comparison visualizations vs. standard ESGUI
+- Performs text mining to extract ESG-related keywords across Environmental, Social, and Governance domains
+- Normalizes text frequency distributions across countries and document collections
+- Calculates entropy-based objective weights for E, S, and G pillars for each Asian economy
+- Constructs the composite EW-ESGUI index
+- Generates initial comparison visualizations vs. standard ESGUI (Ongan et al., 2025) and global uncertainty indicators
 
 **Expected Outputs:**
 - EW-ESGUI time series by country
-- Entropy weights table (Figure: Table 4 in final report)
+- Entropy weights table (Table 4 in final report)
 - Comparison graphs (Figures 2-6 in final report)
-- CSV or Excel file with index values for subsequent analysis
+- Processed index values ready for inclusion in the master panel dataset
 
 **Execution Time:** ~10-15 minutes
 
 **Success Indicators:**
 - All cells execute without errors
-- Index values are numeric and within expected range (typically 0-100 or indexed to 100)
+- Index values are numeric and within expected ranges [0, 100]
 - Graphs display properly showing index trends over time
 
 ---
 
-#### STEP 2: Prepare Data in Stata
+#### STEP 2: Missing Value Imputation via Holt's Linear Trend (RO2 Preprocessing)
+
+**File:** `DOFILE & CODE/HOLT_TREND.ipynb`
+
+**Purpose in Research Pipeline:**
+Before conducting the econometric analysis for **Research Objective 2 (RO2)**, the macroeconomic, financial, and environmental panel series must be checked for completeness. Due to international reporting lags, key series often exhibit missing values for recent years (specifically **2022, 2023, 2024, and 2025**). If unaddressed, standard panel regression in Stata drops entire country-year rows where any regressor is missing (`drop if missings > 0`), severely truncating the sample size and losing critical post-pandemic insights. `HOLT_TREND.ipynb` applies Holt's two-parameter linear exponential smoothing to impute these values while preserving country-specific trend dynamics.
+
+**Execution Method:**
+
+```bash
+# Launch Jupyter Notebook or Google Colab
+jupyter notebook "DOFILE & CODE/HOLT_TREND.ipynb"
+```
+
+*Or via command line:*
+```bash
+jupyter nbconvert --to notebook --execute "DOFILE & CODE/HOLT_TREND.ipynb"
+```
+
+**Methodological Workflow:**
+
+1. **Data Ingestion & Type Standardization:**
+   - Reads the raw panel dataset (`pd.read_excel`)
+   - Standardizes `Year` as numeric integer (`Int64`) and `Country` as string
+   - Separates panel identifier columns (`Country`, `Year`) from numeric indicators (`value_cols`)
+   - Sorts panel sequentially by `[Country, Year]`
+
+2. **Temporal Grid Verification & Row Alignment:**
+   - Targets missing forecast horizon: `fill_years = [2022, 2023, 2024, 2025]`
+   - Inspects whether each country possesses explicit rows for all target years; if any country-year row is missing, appends dummy rows with `NaN` for all indicators
+
+3. **Holt's Linear Trend Model Formulation:**
+   For each variable $y$ of country $i$, Holt's linear trend method models level ($l_t$) and additive trend slope ($b_t$):
+   $$\begin{aligned}
+   l_t &= \alpha y_t + (1 - \alpha)(l_{t-1} + b_{t-1}) \\
+   b_t &= \beta(l_t - l_{t-1}) + (1 - \beta)b_{t-1} \\
+   \hat{y}_{t+h} &= l_t + h \cdot b_t
+   \end{aligned}$$
+   where $\alpha \in [0, 1]$ is the smoothing parameter for the level, and $\beta \in [0, 1]$ is the smoothing parameter for the trend.
+
+4. **Recursive One-Step Forecasting & Parameter Fitting:**
+   - Implemented via `statsmodels.tsa.holtwinters.ExponentialSmoothing(hist, trend="add", seasonal=None, initialization_method="estimated")`
+   - For each missing cell $(i, t)$, extracts historical observed values: $\{y_{i,\tau} \mid \tau < t, y_{i,\tau} \text{ is not NaN}\}$
+   - **Sample size threshold:** Requires at least 4 historical data points ($N \ge 4$); otherwise returns `NaN`
+   - **Stationary / Zero-variance guard:** If series variance $\text{std}(y) == 0$, directly carries forward the last observed scalar
+   - Fits the model with maximum likelihood / sum of squared errors optimization (`fit = model.fit(optimized=True)`)
+   - Extracts fitted smoothing level $\alpha$ (`fit.params['smoothing_level']`) and trend $\beta$ (`fit.params['smoothing_trend']`)
+   - Evaluates 1-step ahead forecast $\hat{y}_{t+1}$ and updates the cell sequentially
+
+5. **Empirical Parameter Tracking & Export:**
+   - Logs every imputation event into a parameter audit trail (`holt_params_df`) containing: `Country`, `Year`, `Variable`, `Alpha`, `Beta`
+   - Exports the completed, imputed dataset to Excel: `HOLT TREND 9.4.xlsx` (which feeds directly into the master `DATASET.xlsx` for Stata analysis)
+
+**Expected Outputs:**
+- Imputed panel dataset: `HOLT TREND 9.4.xlsx` (with missing cells in 2022–2025 populated)
+- Estimation log dataframe: `holt_params_df` verifying parameter convergence ($\alpha, \beta$)
+- Balanced panel structure ready for Stata panel quantile regression
+
+**Execution Time:** ~1-3 minutes
+
+**Success Indicators:**
+- Zero missing values remaining in target variables across 2022–2025 for all six countries
+- Estimated smoothing parameters $\alpha$ and $\beta$ fall within valid bounds $[0, 1]$
+- Trajectories remain economically plausible without discontinuous explosive spikes
+
+---
+
+#### STEP 3: Prepare Data in Stata
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 1-26)
 
@@ -528,7 +635,7 @@ stata /b do "DOFILE & CODE\Panel Quantile Analysis.do"
 
 ---
 
-#### STEP 3: Generate Descriptive Statistics
+#### STEP 4: Generate Descriptive Statistics
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 28-40)
 
@@ -565,7 +672,7 @@ misstable summarize
 
 ---
 
-#### STEP 4: Run Preliminary Diagnostic Tests
+#### STEP 5: Run Preliminary Diagnostic Tests
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 42-85)
 
@@ -613,7 +720,7 @@ xtwest lnREEC EUI CO2E WUI FDI TO, lags(1) leads(0) ///
 
 ---
 
-#### STEP 5: Run Method of Moments Quantile Regression (MMQR)
+#### STEP 6: Run Method of Moments Quantile Regression (MMQR)
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 87-95)
 
@@ -654,7 +761,7 @@ mmqreg lnREEC EW_ESGUI GDP FDI WUI TO EUI CO2E, q(90)
 
 ---
 
-#### STEP 6: Bootstrap Quantile Regression (Robustness Check)
+#### STEP 7: Bootstrap Quantile Regression (Robustness Check)
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 97-107)
 
@@ -689,7 +796,7 @@ bsqreg lnREEC EW_ESGUI GDP FDI WUI TO EUI CO2E, quantile(0.9) reps(500)
 
 ---
 
-#### STEP 7: Causality Analysis (Granger Causality Test)
+#### STEP 8: Causality Analysis (Granger Causality Test)
 
 **File:** `DOFILE & CODE/Panel Quantile Analysis.do` (LINES 109-115)
 
@@ -729,7 +836,7 @@ xtgcause lnREEC CO2E        // Does CO2 Emissions cause REEC?
 
 ---
 
-#### STEP 8: VAR/FEVD Analysis (Dynamic Analysis)
+#### STEP 9: VAR/FEVD Analysis (Dynamic Analysis)
 
 **File:** `DOFILE & CODE/FEVD_vn.do` (ENTIRE FILE)
 
@@ -797,6 +904,40 @@ The script performs separate VAR analyses for three dimensional analyses of EW-E
 - All three VAR models estimate successfully
 - IRF graphs display properly with confidence bands
 - FEVD percentages sum to 100% within rounding error
+
+---
+
+#### STEP 10: Visualize Quantile Regression Results (Figures 9 & 10)
+
+**File:** `DOFILE & CODE/Research Objective 2.ipynb`
+
+**Execution Method:**
+
+```bash
+# Launch Jupyter Notebook
+jupyter notebook "DOFILE & CODE/Research Objective 2.ipynb"
+```
+
+**What This Script Does:**
+- Loads MMQR coefficients and significance levels from Excel export files (`MMQR_Results_Coefficients.xlsx`, `MMQR_Results_Significance.xlsx`)
+- Loads Bootstrap quantile regression coefficients and significance tests (`boostrap2.xlsx`, `Boostrap.xlsx` / `Boostrap_Results_Coefficients.xlsx`)
+- Structures coefficients across quantiles ($q = 0.25, 0.50, 0.75$) and variables (`EW_ESGUI`, `GDP`, `FDI`, `WUI`, `TO`, `EUI`, `CO2E`)
+- Dynamically assigns color palettes based on statistical significance level:
+  - Three stars ($p < 0.01$): `#D55E00` (Strong significance)
+  - Two stars ($p < 0.05$): `#E69F00` (Moderate significance)
+  - One star ($p < 0.10$): `#0072B2` (Weak significance)
+  - Non-significant ($p \ge 0.10$): `#BDBDBD` (Gray baseline)
+- Produces high-resolution comparative visualization panels representing Figure 9 (MMQR Estimates Across Quantiles) and Figure 10 (Bootstrap Quantile Estimates Across Quantiles)
+
+**Expected Outputs:**
+- Multi-panel visual trajectory graphs showing how the impact of EW-ESGUI and control variables varies across renewable energy consumption quantiles
+- Exported figures formatted for journal publication
+
+**Execution Time:** ~1-2 minutes
+
+**Success Indicators:**
+- Both notebook cells execute without file path errors
+- Graphs display distinct quantile slopes matching Table 11 and Table 12 numerical results
 
 ---
 
@@ -1038,7 +1179,18 @@ If Figure 7 shows "Response of CO2E to EW-ESGUI shock":
 
 **Methodological Framework:**
 
-1. **Panel Quantile Regression (MMQR)**
+1. **Data Preprocessing & Missing Value Imputation: Holt's Linear Trend Model**
+   - **Methodological Rationale:** Macroeconomic and energy series collected from multinational repositories (World Bank, IEA, UNCTAD) frequently suffer from staggered reporting delays, leading to missing observations in recent periods (2022–2025). Adopting naive listwise deletion eliminates all panel observations for those periods, introducing survivorship bias and reducing statistical power. Conversely, static mean imputation or zero-filling flattens cross-country heterogeneity and creates artificial clustering that distorts quantile estimates.
+   - **Model Specification:** We employ Holt's Linear Exponential Smoothing (Holt, 1957; Hyndman & Athanasopoulos, 2018), which models both local level ($l_t$) and time-varying linear trend ($b_t$) without requiring seasonal components:
+     $$\begin{aligned}
+     l_{i,t} &= \alpha y_{i,t} + (1 - \alpha)(l_{i,t-1} + b_{i,t-1}) \\
+     b_{i,t} &= \beta(l_{i,t} - l_{i,t-1}) + (1 - \beta)b_{i,t-1} \\
+     \hat{y}_{i,t+1} &= l_{i,t} + b_{i,t}
+     \end{aligned}$$
+   - **Optimization:** For each country $i$ and variable, smoothing parameters $\alpha \in (0, 1)$ and $\beta \in (0, 1)$ are estimated via maximum likelihood / least squares on all available historical data ($t < 2022$). Missing observations in $2022, 2023, 2024, 2025$ are predicted recursively one step ahead ($h=1$).
+   - **Transparency & Auditability:** Estimated parameters ($\alpha, \beta$) for every imputed variable and economy are logged systematically (`holt_params_df`) to maintain full econometric replicability.
+
+2. **Panel Quantile Regression (MMQR)**
    - **Advantage:** Captures distributional effects across stages of energy transition
    - **Model Specification:**
      ```
@@ -1049,12 +1201,12 @@ If Figure 7 shows "Response of CO2E to EW-ESGUI shock":
    - **Interpretation:** β_q measures impact of EW-ESGUI on renewable energy consumption at different quantiles
    - **Key Insight:** Effect heterogeneity reveals stage-dependent energy transition responses
 
-2. **Robustness and Validation**
+3. **Robustness and Validation**
    - Bootstrap quantile regression (500 replications)
    - Confidence interval overlap confirmation
    - Granger causality analysis (Dumitrescu-Hurlin test)
 
-3. **Dynamic Analysis**
+4. **Dynamic Analysis**
    - Vector Autoregression (VAR) captures contemporaneous relationships
    - IRF traces temporal shock responses
    - FEVD decomposes variance sources
@@ -1541,25 +1693,31 @@ Use this checklist to verify complete replication:
   □ numpy
   □ scipy
   □ scikit-learn
+  □ statsmodels
+  □ openpyxl
   □ matplotlib
   □ seaborn
 
 □ File Structure Verified
   □ ENTROPY.ipynb present
-  □ FEVD_vn.do present
+  □ HOLT_TREND.ipynb present
   □ Panel Quantile Analysis.do present
+  □ FEVD_vn.do present
+  □ Research Objective 2.ipynb present
   □ DATASET.xlsx present
   □ Output data files present
 
 □ Analysis Steps Completed
-  □ Step 1: ENTROPY.ipynb executed successfully
-  □ Step 2: Data prepared in Stata
-  □ Step 3: Descriptive statistics generated
-  □ Step 4: Preliminary tests completed
-  □ Step 5: MMQR estimation completed
-  □ Step 6: Bootstrap quantile regression completed
-  □ Step 7: Causality analysis completed
-  □ Step 8: VAR/FEVD analysis completed
+  □ Step 1: ENTROPY.ipynb executed successfully (EW-ESGUI constructed)
+  □ Step 2: HOLT_TREND.ipynb executed successfully (Missing values imputed for RO2)
+  □ Step 3: Data prepared and encoded in Stata
+  □ Step 4: Descriptive statistics generated (Table 1, Table 3)
+  □ Step 5: Preliminary panel diagnostic tests completed (Tables 7-10)
+  □ Step 6: MMQR estimation completed across quantiles (Table 11)
+  □ Step 7: Bootstrap quantile regression completed (500 reps)
+  □ Step 8: Dumitrescu-Hurlin causality analysis completed (Table 12)
+  □ Step 9: VAR/FEVD dynamic analysis completed (Tables 5-6, Figures 7-8)
+  □ Step 10: Research Objective 2.ipynb executed (Figures 9-10 generated)
 
 □ Output Validation
   □ Summary statistics tables generated
@@ -1704,10 +1862,11 @@ This README has been verified against all Energy Economics journal replication s
 | 1.0 | March 27, 2026 | Initial README document created for paper submission to Energy Economics |
 | 1.1 | March 27, 2026 | Added detailed troubleshooting and verification sections |
 | 1.2 | March 27, 2026 | Added complete Appendices A-C, master script, data availability statement, and compliance checklist |
+| 1.3 | October 31, 2026 | Integrated complete documentation for `HOLT_TREND.ipynb` (missing value imputation via Holt's Linear Trend for Research Objective 2) and `Research Objective 2.ipynb` (quantile regression visualization) |
 
 ---
 
-**Last Updated:** March 27, 2026
+**Last Updated:** October 31, 2026
 **Prepared by:** Research Team, Vietnam National University Ho Chi Minh City
 **For:** Energy Economics Journal Replication Package
 
